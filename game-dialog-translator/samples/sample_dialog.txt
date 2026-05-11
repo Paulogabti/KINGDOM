@@ -1,0 +1,12 @@
+测试物品获得|Test Items Acquired
+劳烦掌柜为在下准备些上好的饭菜。|Please prepare some delicious food for me.
+好的 大人您先找个位子稍等片刻，饭菜马上就来。|Okay, sir, please find a seat and wait for a moment, the food will be here soon.
+ABC大人今日有何安排？|What are Mr. ABC’s plans for today?
+NI可否相助于WO呢？|Can NI help WO?
+听乡民所言，最后一次见其行踪是在PLACE1NAME...咱们得速速前往才是。|According to the villagers, the last time he was seen was at PLACE1NAME... We have to go there quickly.
+中文|Text with | internal separator
+没有 separador nesta linha
+PLACE的ITEM近期十分的便宜|PLACE items are very cheap recently.
+SN1MING！冷静！且听WO一言再做决定也不迟！|SN1MING! Calm down! It’s not too late to listen to WO before making a decision!
+夫君，您有什么事情吗？|Husband, is there anything I can help you with?
+*华山山脚下*。|*At the foot of Mount Huashan*.
