@@ -1,0 +1,7 @@
+streamlit
+deepl
+python-dotenv
+pydantic
+pydantic-settings
+pytest
+requests
