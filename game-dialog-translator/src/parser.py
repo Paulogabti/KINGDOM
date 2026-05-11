@@ -1,12 +1,11 @@
 from __future__ import annotations
-
 import logging
+from dataclasses import dataclass
 from pathlib import Path
-from pydantic import BaseModel
 from .utils import split_line_ending
 
-
-class ParsedLine(BaseModel):
+@dataclass
+class ParsedLine:
     line_number: int
     chinese_part: str = ""
     separator: str = ""
@@ -16,6 +15,9 @@ class ParsedLine(BaseModel):
     original_line: str = ""
     portuguese_translation: str = ""
     error_message: str = ""
+    protected_english: str = ""
+    attempts: int = 0
+    characters_count: int = 0
 
 
 def _read_text_with_fallback(path: Path) -> str:
