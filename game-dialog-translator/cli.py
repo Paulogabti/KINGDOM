@@ -4,7 +4,7 @@ import argparse
 from pathlib import Path
 from dotenv import load_dotenv
 
-from src.config import Settings, ensure_dirs, DEEPL_FREE_URL, DEEPL_PRO_URL
+from src.config import Settings, ensure_dirs, DEEPL_FREE_BASE_URL, DEEPL_PRO_BASE_URL
 from src.exporter import export_from_progress
 from src.parser import parse_file
 from src.placeholders import protect_placeholders, restore_placeholders, placeholders_preserved
@@ -14,7 +14,7 @@ from src.validator import validate_lines
 
 
 def resolve_url(plan: str, custom: str | None) -> str:
-    return custom or (DEEPL_PRO_URL if plan == "pro" else DEEPL_FREE_URL)
+    return custom or (DEEPL_PRO_BASE_URL if plan == "pro" else DEEPL_FREE_BASE_URL)
 
 
 def run_translate(args):

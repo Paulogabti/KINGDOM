@@ -11,8 +11,8 @@ Ferramenta para traduzir diálogos de jogos (`chinês|inglês`) para PT-BR com *
 - Gera `arquivo.pt-BR.txt` e `arquivo.translation_report.json`.
 
 ## DeepL API (Free vs Pro)
-- **Free:** endpoint `https://api-free.deepl.com/v2/translate`.
-- **Pro:** endpoint `https://api.deepl.com/v2/translate`.
+- **Free:** base URL `https://api-free.deepl.com`.
+- **Pro:** base URL `https://api.deepl.com`.
 - API key: painel da conta DeepL API.
 
 ## Configuração
@@ -21,7 +21,7 @@ Ferramenta para traduzir diálogos de jogos (`chinês|inglês`) para PT-BR com *
 3. Preencha:
 ```env
 DEEPL_API_KEY=...
-DEEPL_API_URL=https://api-free.deepl.com/v2/translate
+DEEPL_API_URL=https://api-free.deepl.com
 DEEPL_SOURCE_LANG=EN
 DEEPL_TARGET_LANG=PT-BR
 DEFAULT_BATCH_SIZE=20

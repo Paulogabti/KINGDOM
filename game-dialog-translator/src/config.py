@@ -3,13 +3,13 @@ from dataclasses import dataclass
 from pathlib import Path
 import os
 
-DEEPL_FREE_URL = "https://api-free.deepl.com/v2/translate"
-DEEPL_PRO_URL = "https://api.deepl.com/v2/translate"
+DEEPL_FREE_BASE_URL = "https://api-free.deepl.com"
+DEEPL_PRO_BASE_URL = "https://api.deepl.com"
 
 @dataclass
 class Settings:
     deepl_api_key: str = ""
-    deepl_api_url: str = DEEPL_FREE_URL
+    deepl_api_url: str = DEEPL_FREE_BASE_URL
     deepl_source_lang: str = "EN"
     deepl_target_lang: str = "PT-BR"
     default_batch_size: int = 20

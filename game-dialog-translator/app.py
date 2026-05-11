@@ -5,7 +5,7 @@ import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
 
-from src.config import Settings, ensure_dirs, DEEPL_FREE_URL, DEEPL_PRO_URL
+from src.config import Settings, ensure_dirs, DEEPL_FREE_BASE_URL, DEEPL_PRO_BASE_URL
 from src.exporter import export_from_progress
 from src.parser import parse_file
 from src.placeholders import protect_placeholders, restore_placeholders, placeholders_preserved
@@ -20,7 +20,7 @@ out_dir = Path(st.text_input("Pasta de saída", "output"))
 api_key = st.text_input("DEEPL_API_KEY", value=s.deepl_api_key, type="password")
 plan = st.selectbox("Plano", ["free", "pro", "custom"])
 custom = st.text_input("Endpoint custom") if plan == "custom" else ""
-endpoint = custom or (DEEPL_PRO_URL if plan == "pro" else DEEPL_FREE_URL)
+endpoint = custom or (DEEPL_PRO_BASE_URL if plan == "pro" else DEEPL_FREE_BASE_URL)
 st.info(f"Endpoint efetivo: {endpoint}")
 source_lang = st.text_input("source_lang", "EN")
 target_lang = st.text_input("target_lang", "PT-BR")
