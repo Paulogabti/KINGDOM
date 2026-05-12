@@ -22,6 +22,13 @@ plan = st.selectbox("Plano", ["free", "pro", "custom"])
 custom = st.text_input("Endpoint custom") if plan == "custom" else ""
 endpoint = custom or (DEEPL_PRO_BASE_URL if plan == "pro" else DEEPL_FREE_BASE_URL)
 st.info(f"Endpoint efetivo: {endpoint}")
+use_azure_fallback = st.checkbox("Usar Azure como fallback", value=True)
+azure_enabled = st.checkbox("Azure enabled", value=s.azure_translate_enabled)
+azure_key = st.text_input("Azure key", value=s.azure_translator_key, type="password")
+azure_endpoint = st.text_input("Azure endpoint", value=s.azure_translator_endpoint)
+azure_region = st.text_input("Azure region", value=s.azure_translator_region)
+azure_source = st.text_input("Azure source lang", value=s.azure_source_lang)
+azure_target = st.text_input("Azure target lang", value=s.azure_target_lang)
 source_lang = st.text_input("source_lang", "EN")
 target_lang = st.text_input("target_lang", "PT-BR")
 formality = st.text_input("formality", "prefer_more")
@@ -31,6 +38,13 @@ mode = st.radio("Modo", ["Continuar de onde parou", "Recomeçar", "Retentar apen
 if st.button("Testar conexão DeepL"):
     ok, msg = test_deepl_connection(DeepLTranslationSettings(api_key=api_key, api_url=endpoint, source_lang=source_lang, target_lang=target_lang, formality=formality))
     (st.success if ok else st.error)(msg)
+if st.button("Testar Azure"):
+    from src.providers.azure_provider import AzureProvider
+    from src.translator import test_azure_connection
+    res = test_azure_connection(AzureProvider(azure_key, azure_endpoint, azure_region, azure_source, azure_target))
+    (st.success if res.ok else st.error)(res.message)
+if st.button("Testar provedores"):
+    st.write({"deepl": bool(api_key), "azure": bool(azure_enabled and azure_key)})
 
 progress = st.progress(0.0); stats = st.empty(); logs_ph = st.empty(); table_ph = st.empty()
 

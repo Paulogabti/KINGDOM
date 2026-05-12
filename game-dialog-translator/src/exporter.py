@@ -33,7 +33,18 @@ def export_from_progress(source_file: Path, out_dir: Path, store: ProgressStore,
 def _build_report(source_file, out_file, store, lines, validation_dict, started, metadata, force_export):
     metadata = metadata or {}; finished = now_ts(); elapsed = finished - started
     translated = sum(1 for l in lines if l.status == "translated"); chars = sum(l.characters_count for l in lines if l.status == "translated")
-    return {"source_file": str(source_file),"output_file": str(out_file),"file_hash": getattr(store,'file_hash',''),"total_lines": len(lines),"translatable_lines": sum(1 for l in lines if l.separator == "|"),"translated_lines": translated,"pending_lines": sum(1 for l in lines if l.status == "pending"),"error_lines": sum(1 for l in lines if l.status == "error"),"skipped_lines": sum(1 for l in lines if l.status == "skipped_no_separator"),"validation_passed": validation_dict["validation_passed"],"list_of_errors": validation_dict["errors"],"started_at": datetime.utcfromtimestamp(started).isoformat(),"finished_at": datetime.utcfromtimestamp(finished).isoformat(),"elapsed_seconds": elapsed,"average_lines_per_minute": calc_lines_per_minute(translated, elapsed),"average_characters_per_minute": calc_lines_per_minute(chars, elapsed),"characters_translated": chars,"provider": "deepl","deepl_endpoint_used": metadata.get("deepl_endpoint_used", ""),"source_lang": metadata.get("source_lang", "EN"),"target_lang": metadata.get("target_lang", "PT-BR"),"batch_size": metadata.get("batch_size", 20),"force_export": force_export}
+    providers_used = sorted({getattr(l, "provider", "") for l in lines if getattr(l, "provider", "")})
+    lines_by_provider = {}
+    characters_by_provider = {}
+    fallback_events = 0
+    for l in lines:
+        pr = getattr(l, "provider", "")
+        if pr:
+            lines_by_provider[pr] = lines_by_provider.get(pr, 0) + (1 if l.status == "translated" else 0)
+            characters_by_provider[pr] = characters_by_provider.get(pr, 0) + (l.characters_sent or l.characters_count or 0)
+        if getattr(l, "fallback_used", False):
+            fallback_events += 1
+    return {"source_file": str(source_file),"output_file": str(out_file),"file_hash": getattr(store,'file_hash',''),"total_lines": len(lines),"translatable_lines": sum(1 for l in lines if l.separator == "|"),"translated_lines": translated,"pending_lines": sum(1 for l in lines if l.status == "pending"),"error_lines": sum(1 for l in lines if l.status == "error"),"skipped_lines": sum(1 for l in lines if l.status == "skipped_no_separator"),"validation_passed": validation_dict["validation_passed"],"list_of_errors": validation_dict["errors"],"started_at": datetime.utcfromtimestamp(started).isoformat(),"finished_at": datetime.utcfromtimestamp(finished).isoformat(),"elapsed_seconds": elapsed,"average_lines_per_minute": calc_lines_per_minute(translated, elapsed),"average_characters_per_minute": calc_lines_per_minute(chars, elapsed),"characters_translated": chars,"provider": "deepl","deepl_endpoint_used": metadata.get("deepl_endpoint_used", ""),"source_lang": metadata.get("source_lang", "EN"),"target_lang": metadata.get("target_lang", "PT-BR"),"batch_size": metadata.get("batch_size", 20),"force_export": force_export, "providers_used": providers_used, "lines_by_provider": lines_by_provider, "characters_by_provider": characters_by_provider, "fallback_events": fallback_events, "provider_errors": [l.error_message for l in lines if l.status=="error" and l.error_message]}
 
 def export_translated(source_file: Path, out_dir: Path, lines: list, block_on_errors: bool=False):
     out_dir.mkdir(parents=True, exist_ok=True); base = source_file.stem
