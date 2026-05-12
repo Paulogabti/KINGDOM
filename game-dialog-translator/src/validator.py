@@ -43,9 +43,9 @@ def validate_lines(original: list[ParsedLine], translated: list[ParsedLine]) -> 
     for o, t in zip(original, translated):
         if o.original_line_ending != t.original_line_ending:
             errors.append(ValidationError(o.line_number, "LINE_ENDING_CHANGED", "Quebra de linha alterada", o.original_line_ending, t.original_line_ending))
-        if o.separator == "|":
-            if "|" not in f"{t.chinese_part}{t.separator}{t.english_part}":
-                errors.append(ValidationError(o.line_number, "SEPARATOR_MISSING", "Linha perdeu separador |", o.original_line, t.original_line))
+        if o.separator in ("|", "="):
+            if t.separator != o.separator:
+                errors.append(ValidationError(o.line_number, "SEPARATOR_MISSING", f"Linha perdeu separador {o.separator}", o.original_line, t.original_line))
             if o.chinese_part != t.chinese_part:
                 errors.append(ValidationError(o.line_number, "CHINESE_CHANGED", "Parte chinesa alterada", o.chinese_part, t.chinese_part))
             if "__PH_" in t.english_part:
