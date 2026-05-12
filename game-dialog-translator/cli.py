@@ -69,7 +69,7 @@ def _friendly_provider_error(exc: Exception) -> str:
 
 def run_translate(args):
     s = Settings(); ensure_dirs(s)
-    source = Path(args.input); lines = parse_file(source); store = ProgressStore(s.progress_dir, source)
+    source = Path(args.input); lines = parse_file(source, delimiter=args.delimiter); store = ProgressStore(s.progress_dir, source)
     existing_db = store.db_path.exists() and store.db_path.stat().st_size > 0
     backup_path = store.backup()
     if backup_path:
@@ -90,7 +90,7 @@ def run_translate(args):
     if provider == "azure" and (not s.azure_translate_enabled or not (args.azure_key or s.azure_translator_key) or not (args.azure_endpoint or s.azure_translator_endpoint) or not (args.azure_region or s.azure_translator_region)):
         raise RuntimeError("Nenhum provider disponível. Verifique AZURE_TRANSLATOR_KEY, AZURE_TRANSLATOR_ENDPOINT e AZURE_TRANSLATOR_REGION.")
 
-    translatable = [l for l in lines if l.separator == "|" and l.status in ({"error"} if args.retry_errors else {"pending", "error"})]
+    translatable = [l for l in lines if l.separator in ("|", "=") and l.status in ({"error"} if args.retry_errors else {"pending", "error"})]
     summary = store.get_summary()
     total_file = summary['total_lines']
     total_batches_est = max(1, (len(translatable) + args.batch_size - 1) // args.batch_size)
@@ -203,17 +203,17 @@ def run_translate(args):
 def main():
     load_dotenv(); p=argparse.ArgumentParser(); sub=p.add_subparsers(dest='cmd',required=True)
     s = Settings()
-    t=sub.add_parser('translate'); t.add_argument('--input',required=True); t.add_argument('--output-dir',required=True); t.add_argument('--batch-size',type=int,default=20); t.add_argument('--max-chars-per-batch', type=int, default=None); t.add_argument('--start-chars-per-batch', type=int, default=None); t.add_argument('--delay-between-batches', type=float, default=None); t.add_argument('--deepl-plan',choices=['free','pro'],default='free'); t.add_argument('--deepl-api-url'); t.add_argument('--source-lang',default='EN'); t.add_argument('--target-lang',default='PT-BR'); t.add_argument('--formality',default='prefer_more'); t.add_argument('--resume',action='store_true'); t.add_argument('--overwrite',action='store_true'); t.add_argument('--retry-errors',action='store_true'); t.add_argument('--provider',choices=['deepl','azure'],default=s.translation_provider); t.add_argument('--no-fallback',action='store_true'); t.add_argument('--azure-key'); t.add_argument('--azure-endpoint'); t.add_argument('--azure-region'); t.add_argument('--auto-export', action='store_true'); t.add_argument('--debug', action='store_true')
+    t=sub.add_parser('translate'); t.add_argument('--input',required=True); t.add_argument('--output-dir',required=True); t.add_argument('--batch-size',type=int,default=20); t.add_argument('--max-chars-per-batch', type=int, default=None); t.add_argument('--start-chars-per-batch', type=int, default=None); t.add_argument('--delay-between-batches', type=float, default=None); t.add_argument('--deepl-plan',choices=['free','pro'],default='free'); t.add_argument('--deepl-api-url'); t.add_argument('--source-lang',default='EN'); t.add_argument('--target-lang',default='PT-BR'); t.add_argument('--formality',default='prefer_more'); t.add_argument('--resume',action='store_true'); t.add_argument('--overwrite',action='store_true'); t.add_argument('--retry-errors',action='store_true'); t.add_argument('--provider',choices=['deepl','azure'],default=s.translation_provider); t.add_argument('--no-fallback',action='store_true'); t.add_argument('--azure-key'); t.add_argument('--azure-endpoint'); t.add_argument('--azure-region'); t.add_argument('--auto-export', action='store_true'); t.add_argument('--debug', action='store_true'); t.add_argument('--delimiter', choices=['auto','pipe','equals'], default='auto')
     sub.add_parser('validate').add_argument('--original',required=False)
-    v=sub.choices['validate']; v.add_argument('--translated',required=True)
-    e=sub.add_parser('export'); e.add_argument('--input',required=True); e.add_argument('--output-dir',required=True); e.add_argument('--force',action='store_true')
+    v=sub.choices['validate']; v.add_argument('--translated',required=True); v.add_argument('--delimiter', choices=['auto','pipe','equals'], default='auto')
+    e=sub.add_parser('export'); e.add_argument('--input',required=True); e.add_argument('--output-dir',required=True); e.add_argument('--force',action='store_true'); e.add_argument('--delimiter', choices=['auto','pipe','equals'], default='auto')
     td=sub.add_parser('test-deepl'); td.add_argument('--deepl-plan',choices=['free','pro'],default='free'); td.add_argument('--deepl-api-url')
     sub.add_parser('test-azure'); sub.add_parser('providers')
     a=p.parse_args(); s=Settings(); ensure_dirs(s)
     try:
         if a.cmd=='translate':
             run_translate(a); store=ProgressStore(s.progress_dir,Path(a.input));
-            if a.auto_export: export_from_progress(Path(a.input),Path(a.output_dir),store,force_export=True,metadata={"provider":a.provider,"batch_size":a.batch_size})
+            if a.auto_export: export_from_progress(Path(a.input),Path(a.output_dir),store,force_export=True,metadata={"provider":a.provider,"batch_size":a.batch_size}, delimiter=a.delimiter)
         elif a.cmd=='test-deepl':
             ok,msg=test_deepl_connection(DeepLTranslationSettings(api_key=s.deepl_api_key,api_url=resolve_url(a.deepl_plan,a.deepl_api_url))); print(msg); raise SystemExit(0 if ok else 1)
         elif a.cmd=='test-azure':
@@ -222,9 +222,9 @@ def main():
             print('azure: enabled' if s.azure_translate_enabled and s.azure_translator_key else 'azure: not configured')
             print('deepl: enabled' if s.deepl_api_key else 'deepl: not configured')
         elif a.cmd=='export':
-            store=ProgressStore(s.progress_dir,Path(a.input)); export_from_progress(Path(a.input),Path(a.output_dir),store,force_export=a.force)
+            store=ProgressStore(s.progress_dir,Path(a.input)); export_from_progress(Path(a.input),Path(a.output_dir),store,force_export=a.force, delimiter=a.delimiter)
         else:
-            res=validate_lines(parse_file(Path(a.original)),parse_file(Path(a.translated))); print('OK' if res.validation_passed else 'FALHOU')
+            res=validate_lines(parse_file(Path(a.original), delimiter=a.delimiter),parse_file(Path(a.translated), delimiter=a.delimiter)); print('OK' if res.validation_passed else 'FALHOU')
     except Exception as exc:
         if getattr(a, 'debug', False):
             traceback.print_exc()

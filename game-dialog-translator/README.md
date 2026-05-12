@@ -1,11 +1,11 @@
 # Game Dialog Translator PT-BR
 
-Ferramenta para traduzir diálogos de jogos (`chinês|inglês`) para PT-BR com **DeepL**, preservando estrutura, placeholders e número de linhas.
+Ferramenta para traduzir diálogos de jogos (`chinês|inglês` e `chave=inglês`) para PT-BR com **DeepL**, preservando estrutura, placeholders e número de linhas.
 
 ## O que faz
 - Lê `.txt` linha a linha.
 - **Nunca envia a parte chinesa** ao provedor.
-- Traduz apenas a parte inglesa após `|`.
+- Traduz apenas a parte inglesa após o delimitador (`|` ou `=`).
 - Salva progresso em SQLite por hash em `.progress/{sha256}.sqlite`.
 - Permite retomar, sobrescrever, retentar erros, validar e exportar.
 - Gera `arquivo.pt-BR.txt` e `arquivo.translation_report.json`.
@@ -52,7 +52,7 @@ python cli.py test-deepl
 
 ### Traduzir
 ```bash
-python cli.py translate --input "arquivo.txt" --output-dir "saida" --batch-size 20 --deepl-plan free
+python cli.py translate --input "arquivo.txt" --output-dir "saida" --batch-size 20 --deepl-plan free --delimiter auto
 python cli.py translate --input "arquivo.txt" --output-dir "saida" --batch-size 20 --deepl-plan pro
 python cli.py translate --input "arquivo.txt" --output-dir "saida" --resume
 python cli.py translate --input "arquivo.txt" --output-dir "saida" --overwrite
@@ -62,9 +62,9 @@ python cli.py resume --input "arquivo.txt" --output-dir "saida"
 
 ### Validar e exportar
 ```bash
-python cli.py validate --original "arquivo.txt" --translated "arquivo.pt-BR.txt"
-python cli.py export --input "arquivo.txt" --output-dir "saida"
-python cli.py export --input "arquivo.txt" --output-dir "saida" --force
+python cli.py validate --original "arquivo.txt" --translated "arquivo.pt-BR.txt" --delimiter auto
+python cli.py export --input "arquivo.txt" --output-dir "saida" --delimiter auto
+python cli.py export --input "arquivo.txt" --output-dir "saida" --delimiter auto --force
 ```
 
 ## Logs em tempo real
@@ -106,7 +106,7 @@ Planejado: pós-edição opcional de estilo PT-BR após DeepL, mantendo as mesma
 Comando recomendado:
 
 ```bash
-python cli.py translate --input "arquivos\Conversation_dialog.txt" --output-dir "saida" --resume --provider azure --no-fallback --batch-size 100 --auto-export
+python cli.py translate --input "arquivos\_9999_GameUI.txt" --output-dir "saida" --resume --provider azure --no-fallback --delimiter auto --batch-size 100 --auto-export
 ```
 
 - O fluxo agora cria backup automático do SQLite antes de iniciar.
@@ -122,7 +122,7 @@ python cli.py translate --input "arquivos\Conversation_dialog.txt" --output-dir 
 ### Modo rápido Azure (batch adaptativo agressivo)
 
 ```bash
-python cli.py translate --input "arquivos\Conversation_dialog.txt" --output-dir "saida" --resume --provider azure --no-fallback --batch-size 100 --auto-export
+python cli.py translate --input "arquivos\_9999_GameUI.txt" --output-dir "saida" --resume --provider azure --no-fallback --delimiter auto --batch-size 100 --auto-export
 ```
 
 - `--batch-size 100` é o ponto de partida para linhas por lote.
