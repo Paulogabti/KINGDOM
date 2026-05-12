@@ -17,6 +17,23 @@ from src.providers.deepl_provider import DeepLProvider
 from src.providers.azure_provider import AzureProvider
 from src.providers.base import ProviderRateLimitError, ProviderTemporaryError, ProviderPermanentError, ProviderInvalidResponseError, ProviderNotConfiguredError, ProviderQuotaExceededError
 
+def _build_combined_batch(translatable, start_idx: int, max_lines: int, max_chars: int):
+    batch = []
+    total_chars = 0
+    idx = start_idx
+    while idx < len(translatable) and len(batch) < max_lines:
+        line = translatable[idx]
+        protected = protect_placeholders(line.english_part)
+        line_chars = len(protected.text)
+        if batch and total_chars + line_chars > max_chars:
+            break
+        batch.append((line, protected))
+        total_chars += line_chars
+        idx += 1
+        if line_chars > max_chars:
+            break
+    return batch, total_chars
+
 def resolve_url(plan: str, custom: str | None) -> str:
     return custom or (DEEPL_PRO_BASE_URL if plan == "pro" else DEEPL_FREE_BASE_URL)
 
@@ -80,15 +97,22 @@ def run_translate(args):
     print(f"Arquivo: {source.name}\nProvider: {provider}\nTraduzidas total: {summary['translated_lines']}/{total_file}\nPendentes: {summary['pending_lines']}")
 
     start = time.time(); rate_limit_events = 0; translated_session = 0; chars_session = 0
-    current_batch_size = max(1, args.batch_size); delay_between = s.azure_delay_between_batches_seconds
+    max_lines_limit = max(s.azure_min_lines_per_batch, min(s.azure_max_lines_per_batch, args.batch_size))
+    current_lines_limit = max(s.azure_min_lines_per_batch, min(max_lines_limit, args.batch_size))
+    start_chars = args.start_chars_per_batch or s.azure_start_chars_per_batch
+    max_chars_limit = args.max_chars_per_batch or s.azure_max_chars_per_batch
+    current_chars_limit = max(s.azure_min_chars_per_batch, min(start_chars, max_chars_limit))
+    delay_between = args.delay_between_batches if args.delay_between_batches is not None else s.azure_delay_between_batches_seconds
     success_streak = 0; i = 0; batch_idx = 0
     recent_events = deque(maxlen=8); recent_speeds = deque(maxlen=10)
     try:
         while i < len(translatable):
             batch_idx += 1
-            batch = translatable[i:i + current_batch_size]; items=[]; maps={}
-            for l in batch:
-                p = protect_placeholders(l.english_part); maps[l.line_number]=p.mapping; l.protected_english=p.text
+            combined, batch_chars = _build_combined_batch(translatable, i, current_lines_limit, current_chars_limit)
+            batch = [line for line, _ in combined]
+            items=[]; maps={}
+            for l, p in combined:
+                maps[l.line_number]=p.mapping; l.protected_english=p.text
                 items.append(TranslationItem(line_number=l.line_number,text=p.text))
 
             retry = 0
@@ -100,8 +124,11 @@ def run_translate(args):
                     break
                 except ProviderRateLimitError as e:
                     retry += 1; rate_limit_events += 1; success_streak = 0
-                    if s.azure_dynamic_throttle:
-                        current_batch_size = max(1, current_batch_size // 2)
+                    if s.azure_dynamic_batching:
+                        old_lines, old_chars = current_lines_limit, current_chars_limit
+                        current_lines_limit = max(s.azure_min_lines_per_batch, int(current_lines_limit * s.azure_batch_shrink_factor))
+                        current_chars_limit = max(s.azure_min_chars_per_batch, int(current_chars_limit * s.azure_batch_shrink_factor))
+                        print(f"Rate limit detectado. Reduzindo lote: linhas {old_lines}→{current_lines_limit}, chars {old_chars}→{current_chars_limit}.")
                         delay_between = min(s.azure_max_backoff_seconds, max(delay_between * 1.5, s.azure_delay_between_batches_seconds))
                     if retry > s.azure_max_retries:
                         raise
@@ -109,6 +136,32 @@ def run_translate(args):
                     print(f"Rate limit Azure detectado no lote {batch_idx}.\nAguardando {int(wait_s)}s antes de tentar novamente...\nTentativa {retry}/{s.azure_max_retries}")
                     recent_events.append(f"rate_limit lote={batch_idx} retry={retry} wait={wait_s}s")
                     time.sleep(wait_s)
+                except ProviderPermanentError as e:
+                    msg = str(e)
+                    if "400077" in msg or "maximum request size" in msg.lower():
+                        success_streak = 0
+                        if len(batch) == 1:
+                            line = batch[0]
+                            line.status = 'error'
+                            line.error_message = 'Linha excede tamanho máximo da Azure'
+                            store.save_batch([line], batch_number=batch_idx)
+                            i += 1
+                            print("Tamanho máximo excedido em linha única. Marcando erro individual e continuando.")
+                            break
+                        old_chars = current_chars_limit
+                        current_chars_limit = max(s.azure_min_chars_per_batch, int(current_chars_limit * s.azure_batch_shrink_factor))
+                        print(f"Tamanho máximo excedido. Dividindo lote atual em sublotes menores. chars {old_chars}→{current_chars_limit}.")
+                        combined, batch_chars = _build_combined_batch(translatable, i, max(s.azure_min_lines_per_batch, len(batch)//2), current_chars_limit)
+                        batch = [line for line, _ in combined]
+                        items=[]; maps={}
+                        for l, p in combined:
+                            maps[l.line_number]=p.mapping; l.protected_english=p.text
+                            items.append(TranslationItem(line_number=l.line_number,text=p.text))
+                        retry += 1
+                        if retry > s.azure_max_retries:
+                            raise
+                        continue
+                    raise
 
             by_ln={x.line_number:x for x in results}
             for l in batch:
@@ -121,16 +174,21 @@ def run_translate(args):
             store.save_batch(batch,batch_number=batch_idx)
             i += len(batch)
             success_streak += 1
-            if s.azure_dynamic_throttle and success_streak >= 20 and current_batch_size < args.batch_size:
-                current_batch_size = min(args.batch_size, current_batch_size * 2); success_streak = 0; recent_events.append(f"aumento_batch={current_batch_size}")
+            if s.azure_dynamic_batching and success_streak >= s.azure_grow_after_successful_batches:
+                old_lines, old_chars = current_lines_limit, current_chars_limit
+                current_lines_limit = min(max_lines_limit, max(s.azure_min_lines_per_batch, int(current_lines_limit * s.azure_batch_growth_factor)))
+                current_chars_limit = min(max_chars_limit, max(s.azure_min_chars_per_batch, int(current_chars_limit * s.azure_batch_growth_factor)))
+                success_streak = 0
+                if old_lines != current_lines_limit or old_chars != current_chars_limit:
+                    print(f"Estável por {s.azure_grow_after_successful_batches} lotes. Aumentando lote: linhas {old_lines}→{current_lines_limit}, chars {old_chars}→{current_chars_limit}.")
             speed_avg = translated_session / max((time.time() - start) / 60, 1e-6)
             recent_speeds.append((len(batch) / max(elapsed_batch / 60, 1e-6)))
             speed_10 = sum(recent_speeds) / len(recent_speeds)
             fresh_summary = store.get_summary(); pending = fresh_summary['pending_lines']
             eta_minutes = pending / speed_avg if speed_avg > 0 else 0
             eta_time = (datetime.now() + timedelta(minutes=eta_minutes)).strftime('%H:%M:%S') if speed_avg > 0 else '--:--:--'
-            print(f"Arquivo: {source.name}\nProvider: {provider}\nLote: {batch_idx}/{total_batches_est}\nBatch size efetivo: {current_batch_size}\nTraduzidas nesta execução: {translated_session}\nTraduzidas total: {fresh_summary['translated_lines']}/{total_file}\nPendentes: {pending}\nErros: {fresh_summary['error_lines']}\nProgresso total: {(fresh_summary['translated_lines']/max(total_file,1))*100:.2f}%\nProgresso desta sessão: {(translated_session/max(total_file,1))*100:.2f}%\nVelocidade média: {speed_avg:.1f} linhas/min\nVelocidade últimos 10 lotes: {speed_10:.1f} linhas/min\nCaracteres traduzidos nesta sessão: {chars_session}\nTempo decorrido: {str(timedelta(seconds=int(time.time()-start)))}\nETA: {eta_time}\nConclusão prevista: {(datetime.now()+timedelta(minutes=eta_minutes)).strftime('%d/%m/%Y %H:%M:%S') if speed_avg > 0 else '--'}\nÚltimo lote: sucesso em {elapsed_batch:.1f}s\nRate limit: {rate_limit_events} eventos")
-            print(f"lote={batch_idx}/{total_batches_est} provider={provider} batch={current_batch_size} total_translated={fresh_summary['translated_lines']} pending={pending} speed={speed_avg:.1f}/min eta={eta_time} status=ok")
+            print(f"Arquivo: {source.name}\nProvider: {provider}\nLote: {batch_idx}/{total_batches_est}\nTraduzidas nesta execução: {translated_session}\nTraduzidas total: {fresh_summary['translated_lines']}/{total_file}\nPendentes: {pending}\nErros: {fresh_summary['error_lines']}\nProgresso total: {(fresh_summary['translated_lines']/max(total_file,1))*100:.2f}%\nProgresso desta sessão: {(translated_session/max(total_file,1))*100:.2f}%\nVelocidade média: {speed_avg:.1f} linhas/min\nVelocidade últimos 10 lotes: {speed_10:.1f} linhas/min\nCaracteres traduzidos nesta sessão: {chars_session}\nTempo decorrido: {str(timedelta(seconds=int(time.time()-start)))}\nETA: {eta_time}\nConclusão prevista: {(datetime.now()+timedelta(minutes=eta_minutes)).strftime('%d/%m/%Y %H:%M:%S') if speed_avg > 0 else '--'}\nÚltimo lote: sucesso em {elapsed_batch:.1f}s\nRate limit: {rate_limit_events} eventos")
+            print(f"lote={batch_idx}/{total_batches_est} provider={provider} linhas={len(batch)} chars={batch_chars} limit_linhas={current_lines_limit} limit_chars={current_chars_limit} total_translated={fresh_summary['translated_lines']} pending={pending} speed={speed_avg:.1f}/min eta={eta_time} status=ok")
             recent_events.append(f"lote={batch_idx} ok {elapsed_batch:.1f}s")
             time.sleep(delay_between)
     except KeyboardInterrupt:
@@ -145,7 +203,7 @@ def run_translate(args):
 def main():
     load_dotenv(); p=argparse.ArgumentParser(); sub=p.add_subparsers(dest='cmd',required=True)
     s = Settings()
-    t=sub.add_parser('translate'); t.add_argument('--input',required=True); t.add_argument('--output-dir',required=True); t.add_argument('--batch-size',type=int,default=20); t.add_argument('--deepl-plan',choices=['free','pro'],default='free'); t.add_argument('--deepl-api-url'); t.add_argument('--source-lang',default='EN'); t.add_argument('--target-lang',default='PT-BR'); t.add_argument('--formality',default='prefer_more'); t.add_argument('--resume',action='store_true'); t.add_argument('--overwrite',action='store_true'); t.add_argument('--retry-errors',action='store_true'); t.add_argument('--provider',choices=['deepl','azure'],default=s.translation_provider); t.add_argument('--no-fallback',action='store_true'); t.add_argument('--azure-key'); t.add_argument('--azure-endpoint'); t.add_argument('--azure-region'); t.add_argument('--auto-export', action='store_true'); t.add_argument('--debug', action='store_true')
+    t=sub.add_parser('translate'); t.add_argument('--input',required=True); t.add_argument('--output-dir',required=True); t.add_argument('--batch-size',type=int,default=20); t.add_argument('--max-chars-per-batch', type=int, default=None); t.add_argument('--start-chars-per-batch', type=int, default=None); t.add_argument('--delay-between-batches', type=float, default=None); t.add_argument('--deepl-plan',choices=['free','pro'],default='free'); t.add_argument('--deepl-api-url'); t.add_argument('--source-lang',default='EN'); t.add_argument('--target-lang',default='PT-BR'); t.add_argument('--formality',default='prefer_more'); t.add_argument('--resume',action='store_true'); t.add_argument('--overwrite',action='store_true'); t.add_argument('--retry-errors',action='store_true'); t.add_argument('--provider',choices=['deepl','azure'],default=s.translation_provider); t.add_argument('--no-fallback',action='store_true'); t.add_argument('--azure-key'); t.add_argument('--azure-endpoint'); t.add_argument('--azure-region'); t.add_argument('--auto-export', action='store_true'); t.add_argument('--debug', action='store_true')
     sub.add_parser('validate').add_argument('--original',required=False)
     v=sub.choices['validate']; v.add_argument('--translated',required=True)
     e=sub.add_parser('export'); e.add_argument('--input',required=True); e.add_argument('--output-dir',required=True); e.add_argument('--force',action='store_true')
