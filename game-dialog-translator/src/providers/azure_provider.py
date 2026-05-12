@@ -29,9 +29,16 @@ class AzureProvider:
         if resp.status_code in (401, 403):
             raise ProviderNotConfiguredError(resp.text)
         if resp.status_code == 429:
+            retry_after = getattr(resp, "headers", {}).get("Retry-After")
+            retry_after_value = None
+            if retry_after:
+                try:
+                    retry_after_value = float(retry_after)
+                except ValueError:
+                    retry_after_value = None
             if "quota" in resp.text.lower():
                 raise ProviderQuotaExceededError(resp.text)
-            raise ProviderRateLimitError(resp.text)
+            raise ProviderRateLimitError(resp.text, retry_after=retry_after_value)
         if 500 <= resp.status_code <= 599:
             raise ProviderTemporaryError(resp.text)
         if resp.status_code >= 400:

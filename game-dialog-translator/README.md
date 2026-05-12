@@ -100,3 +100,20 @@ Planejado: pós-edição opcional de estilo PT-BR após DeepL, mantendo as mesma
 - Azure entra quando DeepL falha por quota/rate limit e fallback está habilitado.
 - Configure .env conforme .env.example (tier F0 Free, Key e Region do recurso Azure Translator).
 - O relatório JSON inclui providers_used, lines_by_provider e characters_by_provider.
+
+## Modo Azure estável com progresso em tempo real
+
+Comando recomendado:
+
+```bash
+python cli.py translate --input "arquivos\Conversation_dialog.txt" --output-dir "saida" --resume --provider azure --no-fallback --batch-size 20 --auto-export
+```
+
+- O fluxo agora cria backup automático do SQLite antes de iniciar.
+- Em HTTP 429, a CLI lê `Retry-After` quando disponível e aplica retry/backoff automático.
+- O throttle dinâmico reduz o batch size após rate limit (mínimo 1) e aumenta gradualmente após estabilidade.
+- O progresso é salvo por lote no SQLite (sem esperar o fim da execução).
+- Sem `--debug`, erros esperados aparecem com mensagem amigável (sem traceback fatal).
+- Com `--debug`, traceback completo é exibido para diagnóstico.
+- Com `--auto-export`, a exportação com `--force` roda automaticamente ao final (ou após Ctrl+C).
+- Para continuar após interrupção, execute novamente com `--resume`.
