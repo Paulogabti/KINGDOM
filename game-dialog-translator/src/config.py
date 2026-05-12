@@ -8,6 +8,7 @@ DEEPL_PRO_BASE_URL = "https://api.deepl.com"
 
 @dataclass
 class Settings:
+    translation_provider: str = "azure"
     deepl_api_key: str = ""
     deepl_api_url: str = DEEPL_FREE_BASE_URL
     deepl_source_lang: str = "EN"
@@ -19,14 +20,15 @@ class Settings:
     azure_translate_enabled: bool = False
     azure_translator_key: str = ""
     azure_translator_endpoint: str = "https://api.cognitive.microsofttranslator.com"
-    azure_translator_region: str = ""
+    azure_translator_region: str = "brazilsouth"
     azure_source_lang: str = "en"
     azure_target_lang: str = "pt-br"
-    enable_provider_fallback: bool = True
-    fallback_providers: str = "azure"
+    enable_provider_fallback: bool = False
+    fallback_providers: str = ""
 
     def __post_init__(self):
         self.deepl_api_key = os.getenv("DEEPL_API_KEY", self.deepl_api_key)
+        self.translation_provider = os.getenv("TRANSLATION_PROVIDER", self.translation_provider).lower()
         self.deepl_api_url = os.getenv("DEEPL_API_URL", self.deepl_api_url)
         self.deepl_source_lang = os.getenv("DEEPL_SOURCE_LANG", self.deepl_source_lang)
         self.deepl_target_lang = os.getenv("DEEPL_TARGET_LANG", self.deepl_target_lang)
