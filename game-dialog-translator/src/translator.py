@@ -50,8 +50,8 @@ def translate_with_fallback(items: list[TranslationItem], deepl: DeepLProvider |
             logging.warning("Falha DeepL (%s), tentando fallback", e)
             if not enable_fallback:
                 raise
-    if azure and enable_fallback:
+    if azure:
         attempted.append("azure")
         r = azure.translate_batch(items)
-        return r, {"provider":"azure","fallback_used":True,"provider_chain_attempted":attempted}
+        return r, {"provider":"azure","fallback_used":bool(deepl and enable_fallback),"provider_chain_attempted":attempted}
     raise RuntimeError("Nenhum provider disponível")

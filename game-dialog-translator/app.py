@@ -10,14 +10,18 @@ from src.exporter import export_from_progress
 from src.parser import parse_file
 from src.placeholders import protect_placeholders, restore_placeholders, placeholders_preserved
 from src.progress import ProgressStore
-from src.translator import DeepLTranslationSettings, translate_batch_with_deepl, test_deepl_connection
+from src.translator import DeepLTranslationSettings, test_deepl_connection, test_azure_connection, translate_with_fallback
+from src.providers import TranslationItem
+from src.providers.deepl_provider import DeepLProvider
+from src.providers.azure_provider import AzureProvider
 from src.utils import now_ts, calc_lines_per_minute, calc_eta_seconds, calc_percent, fmt_duration, eta_finish_time
 
 load_dotenv(); s = Settings(); ensure_dirs(s)
 st.title("Game Dialog Translator PT-BR")
 files = st.file_uploader("Upload .txt", type=["txt"], accept_multiple_files=True)
 out_dir = Path(st.text_input("Pasta de saída", "output"))
-api_key = st.text_input("DEEPL_API_KEY", value=s.deepl_api_key, type="password")
+provider = st.selectbox("Provider principal", ["azure", "deepl"], index=0)
+api_key = st.text_input("DEEPL_API_KEY (legado)", value=s.deepl_api_key, type="password")
 plan = st.selectbox("Plano", ["free", "pro", "custom"])
 custom = st.text_input("Endpoint custom") if plan == "custom" else ""
 endpoint = custom or (DEEPL_PRO_BASE_URL if plan == "pro" else DEEPL_FREE_BASE_URL)
@@ -33,16 +37,18 @@ source_lang = st.text_input("source_lang", "EN")
 target_lang = st.text_input("target_lang", "PT-BR")
 formality = st.text_input("formality", "prefer_more")
 batch = st.number_input("batch_size", min_value=1, value=20)
-mode = st.radio("Modo", ["Continuar de onde parou", "Recomeçar", "Retentar apenas erros", "Sobrescrever tudo"])
+mode = st.radio("Modo", ["Resumir tradução existente", "Iniciar nova tradução", "Retentar apenas erros", "Sobrescrever tudo"])
 
 if st.button("Testar conexão DeepL"):
     ok, msg = test_deepl_connection(DeepLTranslationSettings(api_key=api_key, api_url=endpoint, source_lang=source_lang, target_lang=target_lang, formality=formality))
     (st.success if ok else st.error)(msg)
-if st.button("Testar Azure"):
-    from src.providers.azure_provider import AzureProvider
-    from src.translator import test_azure_connection
-    res = test_azure_connection(AzureProvider(azure_key, azure_endpoint, azure_region, azure_source, azure_target))
-    (st.success if res.ok else st.error)(res.message)
+if st.button("Testar provider atual"):
+    if provider == "azure":
+        res = test_azure_connection(AzureProvider(azure_key, azure_endpoint, azure_region, azure_source, azure_target))
+        (st.success if res.ok else st.error)(res.message)
+    else:
+        ok, msg = test_deepl_connection(DeepLTranslationSettings(api_key=api_key, api_url=endpoint, source_lang=source_lang, target_lang=target_lang, formality=formality))
+        (st.success if ok else st.error)(msg)
 if st.button("Testar provedores"):
     st.write({"deepl": bool(api_key), "azure": bool(azure_enabled and azure_key)})
 
@@ -54,19 +60,21 @@ if st.button("Iniciar tradução") and files:
         temp.write_bytes(up.getbuffer())
         lines = parse_file(temp)
         store = ProgressStore(s.progress_dir, temp)
-        if mode in {"Recomeçar", "Sobrescrever tudo"}: store.reset_progress()
+        if mode == "Sobrescrever tudo" and st.checkbox("Confirmo resetar todo progresso", value=False, key=f"confirm_{up.name}"):
+            store.reset_progress()
         store.initialize_progress(lines); store.apply_existing(lines)
         if mode == "Retentar apenas erros": store.mark_errors_for_retry(); store.apply_existing(lines)
         trans = [x for x in lines if x.separator == "|" and x.status in {"pending", "error"}]
-        cfg = DeepLTranslationSettings(api_key=api_key, api_url=endpoint, source_lang=source_lang, target_lang=target_lang, formality=formality)
+        deepl = DeepLProvider(api_key, endpoint, source_lang, target_lang, formality) if provider == "deepl" else None
+        azure = AzureProvider(azure_key, azure_endpoint, azure_region, azure_source, azure_target) if provider == "azure" else None
         start = now_ts(); done = 0; chars = 0; recent_logs = []
         for i in range(0, len(trans), int(batch)):
             b = trans[i:i + int(batch)]; items = []; maps = {}
             for l in b:
                 pp = protect_placeholders(l.english_part); maps[l.line_number] = pp.mapping
                 items.append({"line_number": l.line_number, "text": pp.text})
-            resp = translate_batch_with_deepl(items, cfg)
-            by_ln = {x["line_number"]: x["translation"] for x in resp}
+            resp, _meta = translate_with_fallback([TranslationItem(line_number=x["line_number"], text=x["text"]) for x in items], deepl=deepl, azure=azure, enable_fallback=False)
+            by_ln = {x.line_number: x.translation for x in resp}
             for l in b:
                 r = by_ln.get(l.line_number, "")
                 if not r: l.status = "error"; l.error_message = "Falha DeepL"; continue

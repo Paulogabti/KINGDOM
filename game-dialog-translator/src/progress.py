@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+import shutil
 from datetime import datetime
 from pathlib import Path
 
@@ -131,6 +132,17 @@ class ProgressStore:
         )
         self.conn.commit()
         return cur.rowcount
+
+    def backup(self) -> Path | None:
+        if not self.db_path.exists():
+            return None
+        backup_dir = self.progress_dir / "backups"
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+        backup_path = backup_dir / f"{self.file_hash}_{timestamp}.sqlite"
+        self.conn.commit()
+        shutil.copy2(self.db_path, backup_path)
+        return backup_path
 
 
 def open_progress_store(db_path: Path):
