@@ -25,6 +25,11 @@ class Settings:
     azure_target_lang: str = "pt-br"
     enable_provider_fallback: bool = False
     fallback_providers: str = ""
+    azure_max_retries: int = 8
+    azure_initial_backoff_seconds: float = 5.0
+    azure_max_backoff_seconds: float = 120.0
+    azure_delay_between_batches_seconds: float = 0.5
+    azure_dynamic_throttle: bool = True
 
     def __post_init__(self):
         self.deepl_api_key = os.getenv("DEEPL_API_KEY", self.deepl_api_key)
@@ -44,6 +49,11 @@ class Settings:
         self.azure_target_lang = os.getenv("AZURE_TARGET_LANG", self.azure_target_lang)
         self.enable_provider_fallback = os.getenv("ENABLE_PROVIDER_FALLBACK", str(self.enable_provider_fallback)).lower() == "true"
         self.fallback_providers = os.getenv("FALLBACK_PROVIDERS", self.fallback_providers)
+        self.azure_max_retries = int(os.getenv("AZURE_MAX_RETRIES", str(self.azure_max_retries)))
+        self.azure_initial_backoff_seconds = float(os.getenv("AZURE_INITIAL_BACKOFF_SECONDS", str(self.azure_initial_backoff_seconds)))
+        self.azure_max_backoff_seconds = float(os.getenv("AZURE_MAX_BACKOFF_SECONDS", str(self.azure_max_backoff_seconds)))
+        self.azure_delay_between_batches_seconds = float(os.getenv("AZURE_DELAY_BETWEEN_BATCHES_SECONDS", str(self.azure_delay_between_batches_seconds)))
+        self.azure_dynamic_throttle = os.getenv("AZURE_DYNAMIC_THROTTLE", str(self.azure_dynamic_throttle)).lower() == "true"
 
 def ensure_dirs(settings: Settings) -> None:
     settings.logs_dir.mkdir(parents=True, exist_ok=True)
