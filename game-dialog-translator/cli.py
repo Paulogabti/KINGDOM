@@ -34,9 +34,23 @@ def build_providers(args, s: Settings):
 def run_translate(args):
     s = Settings(); ensure_dirs(s)
     source = Path(args.input); lines = parse_file(source); store = ProgressStore(s.progress_dir, source)
+    existing_db = store.db_path.exists() and store.db_path.stat().st_size > 0
     store.backup()
-    if args.overwrite: store.reset_progress()
-    store.initialize_progress(lines); store.apply_existing(lines)
+    if args.overwrite:
+        store.reset_progress()
+        existing_db = False
+
+    if args.resume and existing_db:
+        # Em resume, sempre carregar progresso existente antes de qualquer seleção.
+        store.apply_existing(lines)
+        loaded_rows = len(store.load_progress())
+        if loaded_rows == 0:
+            raise RuntimeError(
+                f"--resume solicitado e SQLite existente em {store.db_path}, mas nenhum progresso foi carregado."
+            )
+    else:
+        store.initialize_progress(lines)
+        store.apply_existing(lines)
     if args.retry_errors: store.mark_errors_for_retry(); store.apply_existing(lines)
 
     provider, enable_fallback, deepl, azure = build_providers(args, s)
