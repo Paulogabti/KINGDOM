@@ -1,24 +1,12 @@
 from __future__ import annotations
-import logging, re, time
+import logging
 from dataclasses import dataclass
-try:
-    import deepl
-except ModuleNotFoundError:
-    class _DeepLException(Exception):
-        pass
-    class _QuotaExceededException(_DeepLException):
-        pass
-    class _DummyExceptions:
-        DeepLException = _DeepLException
-        QuotaExceededException = _QuotaExceededException
-    class _DummyDeepL:
-        exceptions = _DummyExceptions()
-        class Translator:
-            def __init__(self,*a,**k):
-                raise RuntimeError("Dependência deepl ausente")
-    deepl = _DummyDeepL()
-
-PH_VAR = re.compile(r"_+\s*PH_(\d{4})\s*_+|\bPH_(\d{4})\b")
+from .providers import TranslationItem, TranslationResult, ProviderTestResult
+from .providers import ProviderQuotaExceededError, ProviderRateLimitError, ProviderTemporaryError
+from .providers import deepl_provider
+from .providers.deepl_provider import DeepLProvider
+deepl = deepl_provider.deepl
+from .providers.azure_provider import AzureProvider
 
 @dataclass
 class DeepLTranslationSettings:
@@ -28,40 +16,14 @@ class DeepLTranslationSettings:
     target_lang: str = "PT-BR"
     formality: str = "prefer_more"
 
-def normalize_placeholder_variants(text: str, valid_tokens: set[str]) -> str:
-    def repl(m):
-        num = m.group(1) or m.group(2)
-        cand = f"__PH_{num}__"
-        return cand if cand in valid_tokens else m.group(0)
-    return PH_VAR.sub(repl, text)
-
 def translate_batch_with_deepl(items: list[dict], settings: DeepLTranslationSettings, retries: int = 3) -> list[dict]:
-    if not settings.api_key:
-        raise ValueError("DEEPL_API_KEY ausente")
-    translator = deepl.Translator(settings.api_key, server_url=settings.api_url)
-    out: dict[int, str] = {}
-    pending = items[:]
-    for attempt in range(1, retries + 1):
-        if not pending: break
-        try:
-            resp = translator.translate_text([x["text"] for x in pending], source_lang=settings.source_lang, target_lang=settings.target_lang, preserve_formatting=True, split_sentences="nonewlines", formality=settings.formality)
-            resp_list = resp if isinstance(resp, list) else [resp]
-            if len(resp_list) != len(pending):
-                raise RuntimeError("Quantidade de traduções retornadas diferente da enviada")
-            for src, tr in zip(pending, resp_list):
-                txt = normalize_placeholder_variants((tr.text or ""), set(re.findall(r"__PH_\d{4}__", src["text"])))
-                if "\n" in txt or "\r" in txt:
-                    raise RuntimeError("Tradução com quebra de linha interna")
-                out[src["line_number"]] = txt
-            pending = [x for x in items if x["line_number"] not in out]
-        except Exception as e:
-            if deepl is not None and isinstance(e, deepl.exceptions.QuotaExceededException):
-                logging.error("Quota exceeded (456): %s", e)
-                break
-            logging.error("Erro DeepL tentativa %s: %s", attempt, e)
-            if attempt < retries:
-                time.sleep(2 ** (attempt - 1))
-    return [{"line_number": i["line_number"], "translation": out.get(i["line_number"], "")} for i in items]
+    deepl_provider.deepl = deepl
+    provider = DeepLProvider(settings.api_key, settings.api_url, settings.source_lang, settings.target_lang, settings.formality)
+    try:
+        out = provider.translate_batch([TranslationItem(line_number=i["line_number"], text=i["text"]) for i in items], retries=retries)
+        return [{"line_number": r.line_number, "translation": r.translation} for r in out]
+    except ProviderQuotaExceededError:
+        return [{"line_number": i["line_number"], "translation": ""} for i in items]
 
 def test_deepl_connection(settings: DeepLTranslationSettings) -> tuple[bool, str]:
     try:
@@ -69,3 +31,27 @@ def test_deepl_connection(settings: DeepLTranslationSettings) -> tuple[bool, str
         return (bool(rs and rs[0]["translation"]), "Conexão DeepL OK")
     except Exception as e:
         return False, f"Falha ao testar conexão DeepL: {e}"
+
+def test_azure_connection(provider: AzureProvider) -> ProviderTestResult:
+    try:
+        out = provider.translate_batch([TranslationItem(line_number=1, text="Hello")])
+        return ProviderTestResult(provider="azure", ok=bool(out and out[0].translation), message="Conexão Azure OK")
+    except Exception as e:
+        return ProviderTestResult(provider="azure", ok=False, message=f"Falha Azure: {e}")
+
+def translate_with_fallback(items: list[TranslationItem], deepl: DeepLProvider | None, azure: AzureProvider | None, enable_fallback: bool = True) -> tuple[list[TranslationResult], dict]:
+    attempted = []
+    if deepl:
+        attempted.append("deepl")
+        try:
+            r = deepl.translate_batch(items)
+            return r, {"provider":"deepl","fallback_used":False,"provider_chain_attempted":attempted}
+        except (ProviderQuotaExceededError, ProviderRateLimitError, ProviderTemporaryError) as e:
+            logging.warning("Falha DeepL (%s), tentando fallback", e)
+            if not enable_fallback:
+                raise
+    if azure and enable_fallback:
+        attempted.append("azure")
+        r = azure.translate_batch(items)
+        return r, {"provider":"azure","fallback_used":True,"provider_chain_attempted":attempted}
+    raise RuntimeError("Nenhum provider disponível")

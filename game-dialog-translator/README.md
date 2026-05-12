@@ -93,3 +93,10 @@ Campos: origem/destino, hash, totais, pendências/erros, validação, tempos, ve
 
 ## Integração futura com GPT personalizado
 Planejado: pós-edição opcional de estilo PT-BR após DeepL, mantendo as mesmas regras de segurança/validação estrutural.
+
+
+## Microsoft Azure Translator como fallback
+- DeepL continua como principal.
+- Azure entra quando DeepL falha por quota/rate limit e fallback está habilitado.
+- Configure .env conforme .env.example (tier F0 Free, Key e Region do recurso Azure Translator).
+- O relatório JSON inclui providers_used, lines_by_provider e characters_by_provider.

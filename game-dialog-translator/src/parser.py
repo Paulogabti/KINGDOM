@@ -18,6 +18,11 @@ class ParsedLine:
     protected_english: str = ""
     attempts: int = 0
     characters_count: int = 0
+    provider: str = ""
+    fallback_used: bool = False
+    provider_chain_attempted: str = ""
+    characters_sent: int = 0
+    translated_at: str = ""
 
 
 def _read_text_with_fallback(path: Path) -> str:

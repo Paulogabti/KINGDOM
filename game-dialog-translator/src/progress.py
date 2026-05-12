@@ -31,11 +31,18 @@ class ProgressStore:
             file_hash TEXT, source_file_name TEXT, line_number INTEGER, chinese_part TEXT,
             english_original TEXT, protected_english TEXT, portuguese_translation TEXT,
             status TEXT, error_message TEXT, updated_at TEXT, batch_number INTEGER, attempts INTEGER,
-            characters_count INTEGER, original_line_ending TEXT, original_line TEXT,
+            characters_count INTEGER, provider TEXT, fallback_used INTEGER, provider_chain_attempted TEXT, characters_sent INTEGER, translated_at TEXT, original_line_ending TEXT, original_line TEXT,
             PRIMARY KEY(file_hash, line_number)
         )"""
         )
+        self._migrate()
         self.conn.commit()
+
+    def _migrate(self):
+        cols = {r[1] for r in self.conn.execute("PRAGMA table_info(progress)").fetchall()}
+        for name, typ in [("provider","TEXT"),("fallback_used","INTEGER"),("provider_chain_attempted","TEXT"),("characters_sent","INTEGER"),("translated_at","TEXT")]:
+            if name not in cols:
+                self.conn.execute(f"ALTER TABLE progress ADD COLUMN {name} {typ}")
 
     def initialize_progress(self, parsed_lines: list[ParsedLine]) -> None:
         self.save_batch(parsed_lines, batch_number=0)
@@ -57,6 +64,7 @@ class ProgressStore:
             l.protected_english = r["protected_english"] or ""
             l.attempts = r["attempts"] or 0
             l.characters_count = r["characters_count"] or 0
+            l.provider = r["provider"] if "provider" in r.keys() else ""
 
     def save_line(self, record: ParsedLine, batch_number: int = 0) -> None:
         self.save_batch([record], batch_number=batch_number)
@@ -66,13 +74,13 @@ class ProgressStore:
         for l in records:
             st = l.status if l.status in VALID_STATUS else "error"
             self.conn.execute(
-                """INSERT INTO progress VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """INSERT INTO progress VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(file_hash,line_number) DO UPDATE SET
             chinese_part=excluded.chinese_part, english_original=excluded.english_original,
             protected_english=excluded.protected_english, portuguese_translation=excluded.portuguese_translation,
             status=excluded.status, error_message=excluded.error_message, updated_at=excluded.updated_at,
             batch_number=excluded.batch_number, attempts=excluded.attempts, characters_count=excluded.characters_count,
-            original_line_ending=excluded.original_line_ending, original_line=excluded.original_line""",
+            provider=excluded.provider, fallback_used=excluded.fallback_used, provider_chain_attempted=excluded.provider_chain_attempted, characters_sent=excluded.characters_sent, translated_at=excluded.translated_at, original_line_ending=excluded.original_line_ending, original_line=excluded.original_line""",
                 (
                     self.file_hash,
                     self.source_file_name,
@@ -87,6 +95,11 @@ class ProgressStore:
                     batch_number,
                     l.attempts,
                     l.characters_count,
+                    getattr(l, "provider", ""),
+                    int(bool(getattr(l, "fallback_used", False))),
+                    str(getattr(l, "provider_chain_attempted", "")),
+                    getattr(l, "characters_sent", l.characters_count),
+                    getattr(l, "translated_at", now),
                     l.original_line_ending,
                     l.original_line,
                 ),
