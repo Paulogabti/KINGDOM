@@ -26,10 +26,20 @@ class Settings:
     enable_provider_fallback: bool = False
     fallback_providers: str = ""
     azure_max_retries: int = 8
-    azure_initial_backoff_seconds: float = 5.0
+    azure_initial_backoff_seconds: float = 3.0
     azure_max_backoff_seconds: float = 120.0
-    azure_delay_between_batches_seconds: float = 0.5
+    azure_delay_between_batches_seconds: float = 0.1
     azure_dynamic_throttle: bool = True
+    azure_start_lines_per_batch: int = 100
+    azure_max_lines_per_batch: int = 100
+    azure_min_lines_per_batch: int = 1
+    azure_start_chars_per_batch: int = 8000
+    azure_max_chars_per_batch: int = 12000
+    azure_min_chars_per_batch: int = 500
+    azure_dynamic_batching: bool = True
+    azure_grow_after_successful_batches: int = 10
+    azure_batch_growth_factor: float = 1.25
+    azure_batch_shrink_factor: float = 0.5
 
     def __post_init__(self):
         self.deepl_api_key = os.getenv("DEEPL_API_KEY", self.deepl_api_key)
@@ -54,6 +64,16 @@ class Settings:
         self.azure_max_backoff_seconds = float(os.getenv("AZURE_MAX_BACKOFF_SECONDS", str(self.azure_max_backoff_seconds)))
         self.azure_delay_between_batches_seconds = float(os.getenv("AZURE_DELAY_BETWEEN_BATCHES_SECONDS", str(self.azure_delay_between_batches_seconds)))
         self.azure_dynamic_throttle = os.getenv("AZURE_DYNAMIC_THROTTLE", str(self.azure_dynamic_throttle)).lower() == "true"
+        self.azure_start_lines_per_batch = int(os.getenv("AZURE_START_LINES_PER_BATCH", str(self.azure_start_lines_per_batch)))
+        self.azure_max_lines_per_batch = int(os.getenv("AZURE_MAX_LINES_PER_BATCH", str(self.azure_max_lines_per_batch)))
+        self.azure_min_lines_per_batch = int(os.getenv("AZURE_MIN_LINES_PER_BATCH", str(self.azure_min_lines_per_batch)))
+        self.azure_start_chars_per_batch = int(os.getenv("AZURE_START_CHARS_PER_BATCH", str(self.azure_start_chars_per_batch)))
+        self.azure_max_chars_per_batch = int(os.getenv("AZURE_MAX_CHARS_PER_BATCH", str(self.azure_max_chars_per_batch)))
+        self.azure_min_chars_per_batch = int(os.getenv("AZURE_MIN_CHARS_PER_BATCH", str(self.azure_min_chars_per_batch)))
+        self.azure_dynamic_batching = os.getenv("AZURE_DYNAMIC_BATCHING", str(self.azure_dynamic_batching)).lower() == "true"
+        self.azure_grow_after_successful_batches = int(os.getenv("AZURE_GROW_AFTER_SUCCESSFUL_BATCHES", str(self.azure_grow_after_successful_batches)))
+        self.azure_batch_growth_factor = float(os.getenv("AZURE_BATCH_GROWTH_FACTOR", str(self.azure_batch_growth_factor)))
+        self.azure_batch_shrink_factor = float(os.getenv("AZURE_BATCH_SHRINK_FACTOR", str(self.azure_batch_shrink_factor)))
 
 def ensure_dirs(settings: Settings) -> None:
     settings.logs_dir.mkdir(parents=True, exist_ok=True)

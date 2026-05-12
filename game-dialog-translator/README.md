@@ -106,7 +106,7 @@ Planejado: pós-edição opcional de estilo PT-BR após DeepL, mantendo as mesma
 Comando recomendado:
 
 ```bash
-python cli.py translate --input "arquivos\Conversation_dialog.txt" --output-dir "saida" --resume --provider azure --no-fallback --batch-size 20 --auto-export
+python cli.py translate --input "arquivos\Conversation_dialog.txt" --output-dir "saida" --resume --provider azure --no-fallback --batch-size 100 --auto-export
 ```
 
 - O fluxo agora cria backup automático do SQLite antes de iniciar.
@@ -117,3 +117,17 @@ python cli.py translate --input "arquivos\Conversation_dialog.txt" --output-dir 
 - Com `--debug`, traceback completo é exibido para diagnóstico.
 - Com `--auto-export`, a exportação com `--force` roda automaticamente ao final (ou após Ctrl+C).
 - Para continuar após interrupção, execute novamente com `--resume`.
+
+
+### Modo rápido Azure (batch adaptativo agressivo)
+
+```bash
+python cli.py translate --input "arquivos\Conversation_dialog.txt" --output-dir "saida" --resume --provider azure --no-fallback --batch-size 100 --auto-export
+```
+
+- `--batch-size 100` é o ponto de partida para linhas por lote.
+- O limite por caracteres por lote evita erro `400077 maximum request size exceeded`.
+- Em `429`, o lote é reduzido automaticamente e o retry/backoff é aplicado sem perder progresso.
+- Em estabilidade contínua, o lote cresce novamente até o teto configurado.
+- O progresso é persistido a cada lote bem-sucedido; linhas já traduzidas não são retraduzidas em `--resume`.
+- Novas flags opcionais: `--max-chars-per-batch`, `--start-chars-per-batch`, `--delay-between-batches`.
